@@ -6,6 +6,7 @@ import json
 import hashlib
 import datetime
 import contextlib
+import zlib
 
 try:
     import redis
@@ -70,29 +71,38 @@ def deduplicate(input_path, result_path, dupe_checker):
     """
     total_dupes = 0
 
-    with gz.open(input_path, 'rb') as fp:
-        with gz.open(result_path, 'ab', compresslevel=4) as out:
-            for line in tqdm(fp):
-                doc = json.loads(line.decode('utf8'))
-                if 'raw_content' not in doc:
-                    # document is media, not a crawl
-                    continue
+    assert input_path != result_path
 
-                # generate hash objects
-                cleaned_url = get_cleaned_url(doc)
-                content_hash = get_content_hash(doc)
-                doc_hash = get_doc_hash(cleaned_url, content_hash)
+    with gz.open(result_path, 'ab', compresslevel=4) as out:
+        try:
+            with gz.open(input_path, 'rb') as fp:
+                for line in tqdm(fp):
+                    try:
+                        doc = json.loads(line.decode('utf8'))
+                    except Exception:
+                        print('Bad json')
+                        break
+                    if 'raw_content' not in doc:
+                        # document is media, not a crawl
+                        continue
 
-                if dupe_checker.is_new(doc_hash):
-                    # add hash and cleaned URL to doc
-                    doc['content_hash'] = content_hash
-                    doc['cleaned_url'] = cleaned_url
+                    # generate hash objects
+                    cleaned_url = get_cleaned_url(doc)
+                    content_hash = get_content_hash(doc)
+                    doc_hash = get_doc_hash(cleaned_url, content_hash)
 
-                    # write output
-                    out.write(json.dumps(doc).encode('utf8'))
-                    out.write(b'\n')
-                else:
-                    total_dupes += 1
+                    if dupe_checker.is_new(doc_hash):
+                        # add hash and cleaned URL to doc
+                        doc['content_hash'] = content_hash
+                        doc['cleaned_url'] = cleaned_url
+
+                        # write output
+                        out.write(json.dumps(doc).encode('utf8'))
+                        out.write(b'\n')
+                    else:
+                        total_dupes += 1
+        except (EOFError, zlib.error):
+            print('Truncated archive')
 
     return total_dupes
 
