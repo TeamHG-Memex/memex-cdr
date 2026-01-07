@@ -1,0 +1,5 @@
+./memex-domains/monthly_index.sh
+./memex-domains/README.md
+./README.md
+./cdr_dedupe.py
+./cdr_validation.py
